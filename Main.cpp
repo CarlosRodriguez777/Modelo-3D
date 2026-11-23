@@ -1,0 +1,308 @@
+#include <iostream>
+#include <vector>
+#include <string>
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define TINYGLTF_NO_STB_IMAGE_WRITE 
+#include "tiny_gltf.h"
+
+// --- 1. ESTRUCTURA DE VÉRTICES ---
+struct Vertex {
+    glm::vec3 Position;
+    glm::vec2 TexCoords;
+    glm::vec3 Normal;
+    glm::vec3 Tangent;
+};
+
+// --- 2. SHADERS ---
+const char* vertexShaderSource = "#version 330 core\n"
+"layout (location = 0) in vec3 aPos;\n"
+"layout (location = 1) in vec2 aTexCoord;\n"
+"layout (location = 2) in vec3 aNormal;\n"
+"layout (location = 3) in vec3 aTangent;\n"
+"out vec2 TexCoord;\n"
+"out vec3 FragPos;\n"
+"out mat3 TBN;\n"
+"uniform mat4 model;\n"
+"uniform mat4 view;\n"
+"uniform mat4 projection;\n"
+"void main() {\n"
+"    FragPos = vec3(model * vec4(aPos, 1.0));\n"
+"    TexCoord = aTexCoord;\n"
+"    vec3 T = normalize(vec3(model * vec4(aTangent, 0.0)));\n"
+"    vec3 N = normalize(vec3(model * vec4(aNormal, 0.0)));\n"
+"    vec3 B = cross(N, T);\n"
+"    TBN = mat3(T, B, N);\n"
+"    gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
+"}";
+
+const char* fragmentShaderSource = "#version 330 core\n"
+"out vec4 FragColor;\n"
+"in vec2 TexCoord;\n"
+"in vec3 FragPos;\n"
+"in mat3 TBN;\n"
+"uniform sampler2D texturaDifusa;\n"
+"uniform sampler2D texturaNormal;\n"
+"uniform vec3 lightPos;\n"
+"void main() {\n"
+"    vec3 normal = texture(texturaNormal, TexCoord).rgb;\n"
+"    normal = normalize(normal * 2.0 - 1.0);\n"
+"    normal = normalize(TBN * normal);\n"
+"    vec3 color = texture(texturaDifusa, TexCoord).rgb;\n"
+"    vec3 ambient = 0.6 * color;\n"
+"    vec3 lightDir = normalize(lightPos - FragPos);\n"
+"    float diff = max(dot(lightDir, normal), 0.0);\n"
+"    vec3 diffuse = diff * color * 1.5;\n"
+"    FragColor = vec4(ambient + diffuse, 1.0);\n"
+"}";
+
+// --- 3. CARGA DE TEXTURAS ---
+unsigned int loadTexture(char const* path) {
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    int width, height, nrComponents;
+    unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+
+    if (data) {
+        GLenum format = (nrComponents == 4) ? GL_RGBA : GL_RGB;
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        stbi_image_free(data);
+    }
+    else {
+        std::cout << "[ADVERTENCIA] No se encontro la imagen: " << path << std::endl;
+        stbi_image_free(data);
+    }
+    return textureID;
+}
+
+// --- 4. CARGA DE MODELOS (TINYGLTF) ---
+bool loadModelGLB(const std::string& path, std::vector<Vertex>& out_vertices, std::vector<unsigned int>& out_indices) {
+    tinygltf::Model model;
+    tinygltf::TinyGLTF loader;
+    std::string err, warn;
+
+    bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, path);
+    if (!ret) {
+        std::cout << "[ERROR GLB] " << err << std::endl;
+        return false;
+    }
+
+    for (const auto& mesh : model.meshes) {
+        for (const auto& primitive : mesh.primitives) {
+            // Leer Índices
+            const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
+            const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
+            const tinygltf::Buffer& indexBuffer = model.buffers[indexBufferView.buffer];
+            int indexByteOffset = indexAccessor.byteOffset + indexBufferView.byteOffset;
+            unsigned int vertexOffset = out_vertices.size();
+
+            if (indexAccessor.componentType == TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT) {
+                const uint16_t* buf = reinterpret_cast<const uint16_t*>(&indexBuffer.data[indexByteOffset]);
+                for (size_t i = 0; i < indexAccessor.count; i++) out_indices.push_back(buf[i] + vertexOffset);
+            }
+            else if (indexAccessor.componentType == TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT) {
+                const uint32_t* buf = reinterpret_cast<const uint32_t*>(&indexBuffer.data[indexByteOffset]);
+                for (size_t i = 0; i < indexAccessor.count; i++) out_indices.push_back(buf[i] + vertexOffset);
+            }
+
+            // Leer Vértices (Posición)
+            const tinygltf::Accessor& posAccessor = model.accessors[primitive.attributes.at("POSITION")];
+            const tinygltf::BufferView& posView = model.bufferViews[posAccessor.bufferView];
+            const float* posBuf = reinterpret_cast<const float*>(&model.buffers[posView.buffer].data[posAccessor.byteOffset + posView.byteOffset]);
+
+            // Leer Coordenadas de Textura 
+            const float* texBuf = nullptr;
+            if (primitive.attributes.count("TEXCOORD_0")) {
+                const tinygltf::Accessor& texAcc = model.accessors[primitive.attributes.at("TEXCOORD_0")];
+                const tinygltf::BufferView& texView = model.bufferViews[texAcc.bufferView];
+                texBuf = reinterpret_cast<const float*>(&model.buffers[texView.buffer].data[texAcc.byteOffset + texView.byteOffset]);
+            }
+
+            for (size_t i = 0; i < posAccessor.count; i++) {
+                Vertex v;
+                v.Position = glm::vec3(posBuf[i * 3], posBuf[i * 3 + 1], posBuf[i * 3 + 2]);
+                v.TexCoords = texBuf ? glm::vec2(texBuf[i * 2], texBuf[i * 2 + 1]) : glm::vec2(0.0f, 0.0f);
+                v.Normal = glm::vec3(0.0f, 1.0f, 0.0f); // Simplificado por compatibilidad
+                v.Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+                out_vertices.push_back(v);
+            }
+        }
+    }
+    return true;
+}
+
+int main() {
+    // --- 5. CONFIGURACIÓN GLFW Y OPENGL ---
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    GLFWwindow* window = glfwCreateWindow(1200,1200, "Proyecto 3D - Fase 1", NULL, NULL);
+    if (!window) { glfwTerminate(); return -1; }
+    glfwMakeContextCurrent(window);
+    gladLoadGL();
+    glViewport(0, 0, 1200, 1200);
+    glEnable(GL_DEPTH_TEST);
+
+    
+    // --- 6. COMPILACIÓN DE SHADERS ---
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+
+    GLuint shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    // --- 7. CARGA DE MODELOS 3D ---
+    // Modelo 1: Objeto 
+    std::vector<Vertex> vertices1;
+    std::vector<unsigned int> indices1;
+    if (!loadModelGLB("modelo.glb", vertices1, indices1)) { return -1; }
+
+    // Modelo 2: Escenario
+    std::vector<Vertex> vertices2;
+    std::vector<unsigned int> indices2;
+    if (!loadModelGLB("escenario.glb", vertices2, indices2)) { return -1; }
+
+    // --- 8. CONFIGURACIÓN DE BUFFERS (VAO/VBO) ---
+    // Buffers Modelo 1
+    GLuint VAO1, VBO1, EBO1;
+    glGenVertexArrays(1, &VAO1); glGenBuffers(1, &VBO1); glGenBuffers(1, &EBO1);
+    glBindVertexArray(VAO1);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO1); glBufferData(GL_ARRAY_BUFFER, vertices1.size() * sizeof(Vertex), &vertices1[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO1); glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices1.size() * sizeof(unsigned int), &indices1[0], GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
+
+    // Buffers Modelo 2
+    GLuint VAO2, VBO2, EBO2;
+    glGenVertexArrays(1, &VAO2); glGenBuffers(1, &VBO2); glGenBuffers(1, &EBO2);
+    glBindVertexArray(VAO2);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO2); glBufferData(GL_ARRAY_BUFFER, vertices2.size() * sizeof(Vertex), &vertices2[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO2); glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices2.size() * sizeof(unsigned int), &indices2[0], GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
+
+    // --- 9. TEXTURAS, LUZ Y MATRICES ---
+    stbi_set_flip_vertically_on_load(true);
+
+    // 1. Texturas del Personaje
+    unsigned int texturaPersonajeColor = loadTexture("personaje_BaseColor.png"); 
+    unsigned int texturaPersonajeNormal = loadTexture("personaje_Normal.png");   
+
+    // 2. Texturas del Escenario
+    unsigned int texturaEscenarioColor = loadTexture("escenario_BaseColor.jpeg");
+    unsigned int texturaEscenarioNormal = loadTexture("escenario_Normal.jpeg");
+
+    // Decirle al shader qué parte de memoria usa cada textura
+    glUseProgram(shaderProgram);
+    glUniform1i(glGetUniformLocation(shaderProgram, "texturaDifusa"), 0);
+    glUniform1i(glGetUniformLocation(shaderProgram, "texturaNormal"), 1);
+
+    glm::vec3 lightPos(0.0f, 5.0f, 2.0f);
+    unsigned int modelLoc = glGetUniformLocation(shaderProgram, "model");
+    unsigned int viewLoc = glGetUniformLocation(shaderProgram, "view");
+    unsigned int projLoc = glGetUniformLocation(shaderProgram, "projection");
+    glUniform3fv(glGetUniformLocation(shaderProgram, "lightPos"), 1, glm::value_ptr(lightPos));
+
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 800.0f, 0.1f, 100.0f);
+    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+    // --- 10. BUCLE PRINCIPAL ---
+    float deltaTime = 0.0f;
+    float lastFrame = 0.0f;
+    float camAngleX = 0.0f, camAngleY = 0.2f, camRadius = 10.0f;
+
+    while (!glfwWindowShouldClose(window)) {
+        float currentFrame = (float)glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        // Controles de cámara orbital
+        float cameraSpeed = 2.5f * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camAngleX -= cameraSpeed;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camAngleX += cameraSpeed;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camAngleY += cameraSpeed;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camAngleY -= cameraSpeed;
+        if (camAngleY > 1.5f) camAngleY = 1.5f;
+        if (camAngleY < -1.5f) camAngleY = -1.5f;
+
+        glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Matriz de Vista (Cámara)
+        float camX = sin(camAngleX) * cos(camAngleY) * camRadius;
+        float camY = sin(camAngleY) * camRadius;
+        float camZ = cos(camAngleX) * cos(camAngleY) * camRadius;
+        glm::mat4 view = glm::lookAt(glm::vec3(camX, camY, camZ), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+
+        // --- RENDERIZAR MODELO 1 (Personaje)
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texturaPersonajeColor);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, texturaPersonajeNormal);
+
+        glBindVertexArray(VAO1);
+        glm::mat4 model1 = glm::mat4(1.0f);
+        model1 = glm::translate(model1, glm::vec3(0.0f, 0.0f, 0.0f));
+        model1 = glm::scale(model1, glm::vec3(0.3f));
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model1));
+        glDrawElements(GL_TRIANGLES, (GLsizei)indices1.size(), GL_UNSIGNED_INT, 0);
+
+        // --- RENDERIZAR MODELO 2 (Escenario) 
+       
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texturaEscenarioColor);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, texturaEscenarioNormal);
+
+        glBindVertexArray(VAO2);
+
+        glm::mat4 model2 = glm::mat4(1.0f);
+
+        model2 = glm::translate(model2, glm::vec3(0.0f, 0.0f, -1.0f));
+        model2 = glm::scale(model2, glm::vec3(3.0f));
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model2));
+        glDrawElements(GL_TRIANGLES, (GLsizei)indices2.size(), GL_UNSIGNED_INT, 0);
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    // --- 11. LIMPIEZA ---
+    glDeleteVertexArrays(1, &VAO1); glDeleteBuffers(1, &VBO1); glDeleteBuffers(1, &EBO1);
+    glDeleteVertexArrays(1, &VAO2); glDeleteBuffers(1, &VBO2); glDeleteBuffers(1, &EBO2);
+    glDeleteProgram(shaderProgram);
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return 0;
+}
