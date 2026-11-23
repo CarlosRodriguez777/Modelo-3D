@@ -137,7 +137,7 @@ bool loadModelGLB(const std::string& path, std::vector<Vertex>& out_vertices, st
                 Vertex v;
                 v.Position = glm::vec3(posBuf[i * 3], posBuf[i * 3 + 1], posBuf[i * 3 + 2]);
                 v.TexCoords = texBuf ? glm::vec2(texBuf[i * 2], texBuf[i * 2 + 1]) : glm::vec2(0.0f, 0.0f);
-                v.Normal = glm::vec3(0.0f, 1.0f, 0.0f); // Simplificado por compatibilidad
+                v.Normal = glm::vec3(0.0f, 1.0f, 0.0f); 
                 v.Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
                 out_vertices.push_back(v);
             }
