@@ -112,6 +112,22 @@ bool loadModelGLB(const std::string& path, std::vector<Vertex>& out_vertices, st
     return true;
 }
 
+// Función para calcular un punto en una curva de Bézier cúbica
+glm::vec3 calcularBezier(glm::vec3 P0, glm::vec3 P1, glm::vec3 P2, glm::vec3 P3, float t) {
+    float u = 1.0f - t;
+    float tt = t * t;
+    float uu = u * u;
+    float uuu = uu * u;
+    float ttt = tt * t;
+
+    glm::vec3 p = uuu * P0;         // Influencia del punto inicial
+    p += 3 * uu * t * P1;           // Influencia del primer punto de control
+    p += 3 * u * tt * P2;           // Influencia del segundo punto de control
+    p += ttt * P3;                  // Influencia del punto final
+
+    return p;
+}
+
 int main() {
     // --- 5. CONFIGURACIÓN GLFW Y OPENGL ---
     glfwInit();
@@ -194,7 +210,7 @@ int main() {
     unsigned int texturaEscenarioNormal = loadTexture("escenario_Normal.jpeg");
 
     
-    glm::vec3 lightPos(0.0f,-0.4f, 1.7f);
+    glm::vec3 lightPos(1.2f,-0.4f, 0.0f);
     glm::vec3 lightColor(1.0f, 0.98f, 0.9f);
 
     ourShader.use();
@@ -211,6 +227,18 @@ int main() {
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;
     float camAngleX = 0.0f, camAngleY = -5.0f, camRadius = 10.0f;
+
+    // --- VARIABLES PARA LA CURVA DE BÉZIER ---
+    float bezierTime = 0.0f;          
+    float bezierSpeed = 0.1f;          
+
+	// P0 Posicion incial de la cámara 
+    glm::vec3 P0 = glm::vec3(5.0f, -10.0f, 5.0f);
+    // P1 y P2 jalan la cámara 
+    glm::vec3 P1 = glm::vec3(5.0f, -10.0f, 5.0f);
+    glm::vec3 P2 = glm::vec3(2.0f, -5.0f, 0.0f);
+    // P3 es el destino final 
+    glm::vec3 P3 = glm::vec3(0.0f, -6.0f, 0.0f);
 
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = (float)glfwGetTime();
@@ -232,11 +260,17 @@ int main() {
         ourShader.use();
 
         // Matriz de Vista (Cámara)
-        float camX = sin(camAngleX) * cos(camAngleY) * camRadius;
-        float camY = sin(camAngleY) * camRadius;
-        float camZ = cos(camAngleX) * cos(camAngleY) * camRadius;
-        glm::vec3 cameraPos = glm::vec3(camX, camY, camZ);
-        glm::mat4 view = glm::lookAt(glm::vec3(camX, camY, camZ), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        // --- 1. ACTUALIZAR EL TIEMPO DE LA CURVA ---
+        bezierTime += bezierSpeed * deltaTime;
+
+        if (bezierTime > 1.0f) {
+            bezierTime = 0.0f;
+        }
+        // --- 2. CALCULAR POSICIÓN CON BÉZIER ---
+        glm::vec3 cameraPos = calcularBezier(P0, P1, P2, P3, bezierTime);
+
+        // --- 3. MATRIZ DE VISTA (Mirando hacia tu escenario) ---
+        glm::mat4 view = glm::lookAt(cameraPos, glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
         ourShader.setMat4("view", view);
         ourShader.setVec3("viewPos", cameraPos);
@@ -249,7 +283,8 @@ int main() {
 
         glBindVertexArray(VAO1);
         glm::mat4 model1 = glm::mat4(1.0f);
-        model1 = glm::translate(model1, glm::vec3(0.0f, 0.0f, 0.0f));
+        model1 = glm::translate(model1, glm::vec3(-0.5f, 0.0f, 0.0f));
+        model1 = glm::rotate(model1, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         model1 = glm::scale(model1, glm::vec3(0.3f));
         ourShader.setMat4("model", model1);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices1.size(), GL_UNSIGNED_INT, 0);
@@ -263,7 +298,8 @@ int main() {
 
         glBindVertexArray(VAO2);
         glm::mat4 model2 = glm::mat4(1.0f);
-        model2 = glm::translate(model2, glm::vec3(0.0f, 0.0f, -1.0f));
+        model2 = glm::translate(model2, glm::vec3(-1.5f, 0.0f, 0.0f));
+        model2 = glm::rotate(model2, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         model2 = glm::scale(model2, glm::vec3(3.0f));
         ourShader.setMat4("model", model2);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices2.size(), GL_UNSIGNED_INT, 0);
