@@ -26,8 +26,17 @@
     <ClInclude Include="stb_image.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Shader.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="default.vert">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="default.frag">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

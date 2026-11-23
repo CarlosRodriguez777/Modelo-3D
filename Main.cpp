@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include "Shader.h"
 
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
@@ -21,49 +22,7 @@ struct Vertex {
     glm::vec3 Tangent;
 };
 
-// --- 2. SHADERS ---
-const char* vertexShaderSource = "#version 330 core\n"
-"layout (location = 0) in vec3 aPos;\n"
-"layout (location = 1) in vec2 aTexCoord;\n"
-"layout (location = 2) in vec3 aNormal;\n"
-"layout (location = 3) in vec3 aTangent;\n"
-"out vec2 TexCoord;\n"
-"out vec3 FragPos;\n"
-"out mat3 TBN;\n"
-"uniform mat4 model;\n"
-"uniform mat4 view;\n"
-"uniform mat4 projection;\n"
-"void main() {\n"
-"    FragPos = vec3(model * vec4(aPos, 1.0));\n"
-"    TexCoord = aTexCoord;\n"
-"    vec3 T = normalize(vec3(model * vec4(aTangent, 0.0)));\n"
-"    vec3 N = normalize(vec3(model * vec4(aNormal, 0.0)));\n"
-"    vec3 B = cross(N, T);\n"
-"    TBN = mat3(T, B, N);\n"
-"    gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
-"}";
-
-const char* fragmentShaderSource = "#version 330 core\n"
-"out vec4 FragColor;\n"
-"in vec2 TexCoord;\n"
-"in vec3 FragPos;\n"
-"in mat3 TBN;\n"
-"uniform sampler2D texturaDifusa;\n"
-"uniform sampler2D texturaNormal;\n"
-"uniform vec3 lightPos;\n"
-"void main() {\n"
-"    vec3 normal = texture(texturaNormal, TexCoord).rgb;\n"
-"    normal = normalize(normal * 2.0 - 1.0);\n"
-"    normal = normalize(TBN * normal);\n"
-"    vec3 color = texture(texturaDifusa, TexCoord).rgb;\n"
-"    vec3 ambient = 0.6 * color;\n"
-"    vec3 lightDir = normalize(lightPos - FragPos);\n"
-"    float diff = max(dot(lightDir, normal), 0.0);\n"
-"    vec3 diffuse = diff * color * 1.5;\n"
-"    FragColor = vec4(ambient + diffuse, 1.0);\n"
-"}";
-
-// --- 3. CARGA DE TEXTURAS ---
+// --- 2. CARGA DE TEXTURAS ---
 unsigned int loadTexture(char const* path) {
     unsigned int textureID;
     glGenTextures(1, &textureID);
@@ -153,29 +112,16 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1200,1200, "Proyecto 3D - Fase 1", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1200,1200, "Proyecto 3D ", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
     glfwMakeContextCurrent(window);
     gladLoadGL();
     glViewport(0, 0, 1200, 1200);
     glEnable(GL_DEPTH_TEST);
 
-    
-    // --- 6. COMPILACIÓN DE SHADERS ---
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
+    // --- 5. COMPILACIÓN DE SHADERS (DESDE ARCHIVOS) ---
 
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    GLuint shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
+    Shader ourShader("default.vert", "default.frag");
 
     // --- 7. CARGA DE MODELOS 3D ---
     // Modelo 1: Objeto 
@@ -222,19 +168,15 @@ int main() {
     unsigned int texturaEscenarioColor = loadTexture("escenario_BaseColor.jpeg");
     unsigned int texturaEscenarioNormal = loadTexture("escenario_Normal.jpeg");
 
-    // Decirle al shader qué parte de memoria usa cada textura
-    glUseProgram(shaderProgram);
-    glUniform1i(glGetUniformLocation(shaderProgram, "texturaDifusa"), 0);
-    glUniform1i(glGetUniformLocation(shaderProgram, "texturaNormal"), 1);
+    ourShader.use();
+    ourShader.setInt("texturaDifusa", 0);
+    ourShader.setInt("texturaNormal", 1);
 
     glm::vec3 lightPos(0.0f, 5.0f, 2.0f);
-    unsigned int modelLoc = glGetUniformLocation(shaderProgram, "model");
-    unsigned int viewLoc = glGetUniformLocation(shaderProgram, "view");
-    unsigned int projLoc = glGetUniformLocation(shaderProgram, "projection");
-    glUniform3fv(glGetUniformLocation(shaderProgram, "lightPos"), 1, glm::value_ptr(lightPos));
+    ourShader.setVec3("lightPos", lightPos);
 
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 800.0f, 0.1f, 100.0f);
-    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+    ourShader.setMat4("projection", projection);
 
     // --- 10. BUCLE PRINCIPAL ---
     float deltaTime = 0.0f;
@@ -263,7 +205,7 @@ int main() {
         float camY = sin(camAngleY) * camRadius;
         float camZ = cos(camAngleX) * cos(camAngleY) * camRadius;
         glm::mat4 view = glm::lookAt(glm::vec3(camX, camY, camZ), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        ourShader.setMat4("view", view);
 
         // --- RENDERIZAR MODELO 1 (Personaje)
         glActiveTexture(GL_TEXTURE0);
@@ -275,7 +217,7 @@ int main() {
         glm::mat4 model1 = glm::mat4(1.0f);
         model1 = glm::translate(model1, glm::vec3(0.0f, 0.0f, 0.0f));
         model1 = glm::scale(model1, glm::vec3(0.3f));
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model1));
+        ourShader.setMat4("model", model1);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices1.size(), GL_UNSIGNED_INT, 0);
 
         // --- RENDERIZAR MODELO 2 (Escenario) 
@@ -291,7 +233,7 @@ int main() {
 
         model2 = glm::translate(model2, glm::vec3(0.0f, 0.0f, -1.0f));
         model2 = glm::scale(model2, glm::vec3(3.0f));
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model2));
+        ourShader.setMat4("model", model2);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices2.size(), GL_UNSIGNED_INT, 0);
 
         glfwSwapBuffers(window);
@@ -301,7 +243,7 @@ int main() {
     // --- 11. LIMPIEZA ---
     glDeleteVertexArrays(1, &VAO1); glDeleteBuffers(1, &VBO1); glDeleteBuffers(1, &EBO1);
     glDeleteVertexArrays(1, &VAO2); glDeleteBuffers(1, &VBO2); glDeleteBuffers(1, &EBO2);
-    glDeleteProgram(shaderProgram);
+    glDeleteProgram(ourShader.ID);
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
