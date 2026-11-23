@@ -181,7 +181,7 @@ int main() {
     // --- 10. BUCLE PRINCIPAL ---
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;
-    float camAngleX = 0.0f, camAngleY = 0.2f, camRadius = 10.0f;
+    float camAngleX = 0.0f, camAngleY = -5.0f, camRadius = 10.0f;
 
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = (float)glfwGetTime();
@@ -204,7 +204,7 @@ int main() {
         float camX = sin(camAngleX) * cos(camAngleY) * camRadius;
         float camY = sin(camAngleY) * camRadius;
         float camZ = cos(camAngleX) * cos(camAngleY) * camRadius;
-        glm::mat4 view = glm::lookAt(glm::vec3(camX, camY, camZ), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 view = glm::lookAt(glm::vec3(camX, camY, camZ), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         ourShader.setMat4("view", view);
 
         // --- RENDERIZAR MODELO 1 (Personaje)
