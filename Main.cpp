@@ -92,11 +92,18 @@ bool loadModelGLB(const std::string& path, std::vector<Vertex>& out_vertices, st
                 texBuf = reinterpret_cast<const float*>(&model.buffers[texView.buffer].data[texAcc.byteOffset + texView.byteOffset]);
             }
 
+            const float* normBuf = nullptr;
+            if (primitive.attributes.count("NORMAL")) {
+                const tinygltf::Accessor& normAcc = model.accessors[primitive.attributes.at("NORMAL")];
+                const tinygltf::BufferView& normView = model.bufferViews[normAcc.bufferView];
+                normBuf = reinterpret_cast<const float*>(&model.buffers[normView.buffer].data[normAcc.byteOffset + normView.byteOffset]);
+            }
+
             for (size_t i = 0; i < posAccessor.count; i++) {
                 Vertex v;
                 v.Position = glm::vec3(posBuf[i * 3], posBuf[i * 3 + 1], posBuf[i * 3 + 2]);
                 v.TexCoords = texBuf ? glm::vec2(texBuf[i * 2], texBuf[i * 2 + 1]) : glm::vec2(0.0f, 0.0f);
-                v.Normal = glm::vec3(0.0f, 1.0f, 0.0f); 
+                v.Normal = normBuf ? glm::vec3(normBuf[i * 3], normBuf[i * 3 + 1], normBuf[i * 3 + 2]) : glm::vec3(0.0f, 1.0f, 0.0f);
                 v.Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
                 out_vertices.push_back(v);
             }
@@ -122,6 +129,24 @@ int main() {
     // --- 5. COMPILACIÓN DE SHADERS (DESDE ARCHIVOS) ---
 
     Shader ourShader("default.vert", "default.frag");
+    Shader lightShader("light.vert", "light.frag");
+
+    float lightVertices[] = {
+        -0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f, -0.5f,
+        -0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,  0.5f,  0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f, -0.5f,  0.5f,
+        -0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,  0.5f,
+         0.5f,  0.5f,  0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,  0.5f,
+        -0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f,
+        -0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,  0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f
+    };
+    GLuint lightVAO, lightVBO;
+    glGenVertexArrays(1, &lightVAO);
+    glGenBuffers(1, &lightVBO);
+    glBindVertexArray(lightVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, lightVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(lightVertices), lightVertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
 
     // --- 7. CARGA DE MODELOS 3D ---
     // Modelo 1: Objeto 
@@ -168,12 +193,13 @@ int main() {
     unsigned int texturaEscenarioColor = loadTexture("escenario_BaseColor.jpeg");
     unsigned int texturaEscenarioNormal = loadTexture("escenario_Normal.jpeg");
 
+    
+    glm::vec3 lightPos(0.0f,-0.4f, 1.7f);
+    glm::vec3 lightColor(1.0f, 0.98f, 0.9f);
+
     ourShader.use();
     ourShader.setInt("texturaDifusa", 0);
     ourShader.setInt("texturaNormal", 1);
-
-    glm::vec3 lightPos(2.0f, 5.0f, 4.0f);
-    glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 
     ourShader.setVec3("lightPos", lightPos);
     ourShader.setVec3("lightColor", lightColor);
@@ -203,12 +229,15 @@ int main() {
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        ourShader.use();
+
         // Matriz de Vista (Cámara)
         float camX = sin(camAngleX) * cos(camAngleY) * camRadius;
         float camY = sin(camAngleY) * camRadius;
         float camZ = cos(camAngleX) * cos(camAngleY) * camRadius;
         glm::vec3 cameraPos = glm::vec3(camX, camY, camZ);
         glm::mat4 view = glm::lookAt(glm::vec3(camX, camY, camZ), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
         ourShader.setMat4("view", view);
         ourShader.setVec3("viewPos", cameraPos);
 
@@ -233,13 +262,24 @@ int main() {
         glBindTexture(GL_TEXTURE_2D, texturaEscenarioNormal);
 
         glBindVertexArray(VAO2);
-
         glm::mat4 model2 = glm::mat4(1.0f);
-
         model2 = glm::translate(model2, glm::vec3(0.0f, 0.0f, -1.0f));
         model2 = glm::scale(model2, glm::vec3(3.0f));
         ourShader.setMat4("model", model2);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices2.size(), GL_UNSIGNED_INT, 0);
+
+        lightShader.use();
+        lightShader.setMat4("projection", projection);
+        lightShader.setMat4("view", view); 
+        lightShader.setVec3("lightColor", lightColor);
+
+        glm::mat4 modelLight = glm::mat4(1.0f);
+        modelLight = glm::translate(modelLight, lightPos);
+        modelLight = glm::scale(modelLight, glm::vec3(0.05f)); 
+        lightShader.setMat4("model", modelLight);
+
+        glBindVertexArray(lightVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -249,6 +289,7 @@ int main() {
     glDeleteVertexArrays(1, &VAO1); glDeleteBuffers(1, &VBO1); glDeleteBuffers(1, &EBO1);
     glDeleteVertexArrays(1, &VAO2); glDeleteBuffers(1, &VBO2); glDeleteBuffers(1, &EBO2);
     glDeleteProgram(ourShader.ID);
+    glDeleteVertexArrays(1, &lightVAO); glDeleteBuffers(1, &lightVBO); glDeleteProgram(lightShader.ID);
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;

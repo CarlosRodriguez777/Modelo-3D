@@ -38,5 +38,11 @@
     <None Include="default.frag">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="light.vert">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="light.frag">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

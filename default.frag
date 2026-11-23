@@ -19,20 +19,23 @@ void main() {
 
     vec3 color = texture(texturaDifusa, TexCoord).rgb;
 
-    float ambientStrength = 0.45;
+    float ambientStrength = 0.25;
     vec3 ambient = ambientStrength * lightColor * color;
 
     vec3 lightDir = normalize(lightPos - FragPos);
     float diff = max(dot(lightDir, normal), 0.0);
     vec3 diffuse = diff * lightColor * color;
 
-    float specularStrength = 0.6; 
+    float specularStrength = 0.8; 
     int shininess = 32;
-
     vec3 viewDir = normalize(viewPos - FragPos);
     vec3 reflectDir = reflect(-lightDir, normal);  
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
     vec3 specular = specularStrength * spec * lightColor;
+
+    float distance = length(lightPos - FragPos);
+    float attenuation = 1.0 / (1.0 + 0.014 * distance + 0.007 * (distance * distance));
+    float intensidad = 2.0;
 
     vec3 result = ambient + diffuse + specular;
     FragColor = vec4(result, 1.0);
