@@ -172,8 +172,11 @@ int main() {
     ourShader.setInt("texturaDifusa", 0);
     ourShader.setInt("texturaNormal", 1);
 
-    glm::vec3 lightPos(0.0f, 5.0f, 2.0f);
+    glm::vec3 lightPos(2.0f, 5.0f, 4.0f);
+    glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
+
     ourShader.setVec3("lightPos", lightPos);
+    ourShader.setVec3("lightColor", lightColor);
 
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 800.0f, 0.1f, 100.0f);
     ourShader.setMat4("projection", projection);
@@ -204,8 +207,10 @@ int main() {
         float camX = sin(camAngleX) * cos(camAngleY) * camRadius;
         float camY = sin(camAngleY) * camRadius;
         float camZ = cos(camAngleX) * cos(camAngleY) * camRadius;
+        glm::vec3 cameraPos = glm::vec3(camX, camY, camZ);
         glm::mat4 view = glm::lookAt(glm::vec3(camX, camY, camZ), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         ourShader.setMat4("view", view);
+        ourShader.setVec3("viewPos", cameraPos);
 
         // --- RENDERIZAR MODELO 1 (Personaje)
         glActiveTexture(GL_TEXTURE0);
