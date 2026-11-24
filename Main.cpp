@@ -212,13 +212,13 @@ int main() {
     
     glm::vec3 lightPos(1.2f,-0.4f, 0.0f);
     glm::vec3 lightColor(1.0f, 0.98f, 0.9f);
+    float lightIntensity = 1.0f;
+    float lightIntensitySpeed = 1.5f;
 
     ourShader.use();
     ourShader.setInt("texturaDifusa", 0);
     ourShader.setInt("texturaNormal", 1);
-
     ourShader.setVec3("lightPos", lightPos);
-    ourShader.setVec3("lightColor", lightColor);
 
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 800.0f, 0.1f, 100.0f);
     ourShader.setMat4("projection", projection);
@@ -245,19 +245,21 @@ int main() {
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // Controles de cámara orbital
-        float cameraSpeed = 2.5f * deltaTime;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camAngleX -= cameraSpeed;
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camAngleX += cameraSpeed;
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camAngleY += cameraSpeed;
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camAngleY -= cameraSpeed;
-        if (camAngleY > 1.5f) camAngleY = 1.5f;
-        if (camAngleY < -1.5f) camAngleY = -1.5f;
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+            lightIntensity += lightIntensitySpeed * deltaTime;
+        }
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+            lightIntensity -= lightIntensitySpeed * deltaTime;
+        }
+        lightIntensity = glm::clamp(lightIntensity, 0.0f, 5.0f);
 
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        glm::vec3 activeLightColor = lightColor * lightIntensity;
+
         ourShader.use();
+        ourShader.setVec3("lightColor", activeLightColor);
 
         // Matriz de Vista (Cámara)
         // --- 1. ACTUALIZAR EL TIEMPO DE LA CURVA ---
