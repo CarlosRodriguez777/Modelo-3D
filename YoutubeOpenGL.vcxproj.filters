@@ -44,5 +44,8 @@
     <None Include="light.frag">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="README.md">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
